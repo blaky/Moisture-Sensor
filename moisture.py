@@ -1,36 +1,53 @@
 #!/usr/bin/python
 
-
 import RPi.GPIO as GPIO
 import time
 import websocket
 import json
 import uuid
+import datetime as dt
 
-def sendMessage(messagecontent):
+latestState = None
+notificationSentAt = dt.datetime.fromtimestamp(0)
+
+def sendMessage(state):
+        global latestState, notificationSentAt
+        
+        messageContent = "WOW! Crazy, thanks for the water!" if state else "HELP ME!, I am so thirsty!"
         try:
+                print "Sending: " + messageContent
                 ws = websocket.WebSocket()
                 ws.connect("ws://blaky.co.uk:9003")
                 connectionId =  uuid.uuid4()
                 ws.send(json.dumps({
 				"userId": str(uuid.uuid4()),
 				"messageId": str(uuid.uuid4()),
-				"content": messagecontent,
+				"content": messageContent,
 				"operation": "NOTIFICATION"
 			}))
                 ws.close()
-                print "Successfully sent notification"
+
+                # Setting globals to prevent message flow.
+                notificationSentAt = dt.datetime.now()
+                latestState = state
+                print "Successfully sent notification for " + ("ON" if state else "OFF") + " state."
         except (RuntimeError, TypeError, NameError) as err:
                 print "Error: unable to send notification"
                 print err
 
-def callback(channel):  
-    if GPIO.input(channel):
-        print "LED off"
-        sendMessage("HELP ME!, I am so thirsty!")
-    else:
-        print "LED on"
-        sendMessage("WOW! Crazy, thanks for the water!")
+def callback(channel):
+        global latestState, notificationSentAt
+        
+        state = GPIO.input(channel)
+        timeDifference = (dt.datetime.now() - notificationSentAt).seconds
+        #print "time difference: " + str(timeDifference)
+        #print "current state: " + str(state)
+        #print "old state: " + str(latestState)
+        if latestState != state and timeDifference > 15:
+                sendMessage(state)
+        else:
+                print "State hasn't changed or too quickly"
+
 
 # Set our GPIO numbering to BCM
 GPIO.setmode(GPIO.BCM)
